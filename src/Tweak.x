@@ -18,10 +18,62 @@ NSString *SCIVersionString = @"v1.0.1-beta";
 
 // Variables that work across features
 BOOL dmVisualMsgsViewedButtonEnabled = false;
+NSMutableSet<NSString *> *dmReadWhitelistThreadIDs = nil;
+
+static NSString * const kSCIDMReadWhitelistKey = @"sci_dm_read_whitelist_thread_ids";
+
+static void SCISaveThreadWhitelist(void) {
+    if (!dmReadWhitelistThreadIDs) {
+        dmReadWhitelistThreadIDs = [NSMutableSet set];
+    }
+
+    [[NSUserDefaults standardUserDefaults] setObject:[dmReadWhitelistThreadIDs allObjects] forKey:kSCIDMReadWhitelistKey];
+}
+
+void SCILoadThreadWhitelist(void) {
+    NSArray *savedThreadIDs = [[NSUserDefaults standardUserDefaults] arrayForKey:kSCIDMReadWhitelistKey];
+
+    if ([savedThreadIDs isKindOfClass:[NSArray class]]) {
+        dmReadWhitelistThreadIDs = [NSMutableSet setWithArray:savedThreadIDs];
+    } else {
+        dmReadWhitelistThreadIDs = [NSMutableSet set];
+    }
+}
+
+BOOL SCIIsThreadWhitelisted(NSString *threadID) {
+    if (![threadID isKindOfClass:[NSString class]] || !threadID.length) return NO;
+
+    if (!dmReadWhitelistThreadIDs) {
+        SCILoadThreadWhitelist();
+    }
+
+    return [dmReadWhitelistThreadIDs containsObject:threadID];
+}
+
+BOOL SCIToggleThreadWhitelist(NSString *threadID) {
+    if (![threadID isKindOfClass:[NSString class]] || !threadID.length) return NO;
+
+    if (!dmReadWhitelistThreadIDs) {
+        SCILoadThreadWhitelist();
+    }
+
+    BOOL nowWhitelisted = NO;
+    if ([dmReadWhitelistThreadIDs containsObject:threadID]) {
+        [dmReadWhitelistThreadIDs removeObject:threadID];
+    } else {
+        [dmReadWhitelistThreadIDs addObject:threadID];
+        nowWhitelisted = YES;
+    }
+
+    SCISaveThreadWhitelist();
+    return nowWhitelisted;
+}
 
 // Tweak first-time setup
 %hook IGInstagramAppDelegate
 - (_Bool)application:(UIApplication *)application willFinishLaunchingWithOptions:(id)arg2 {
+    SCILoadThreadWhitelist();
+
     // Default SCInsta config
     NSDictionary *sciDefaults = @{
         @"hide_ads": @(YES),
