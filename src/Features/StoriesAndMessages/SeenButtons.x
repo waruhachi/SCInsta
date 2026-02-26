@@ -1,6 +1,93 @@
 #import "../../InstagramHeaders.h"
 #import "../../Tweak.h"
 #import "../../Utils.h"
+#import <objc/runtime.h>
+
+static const void *kSCISeenButtonThreadIDKey = &kSCISeenButtonThreadIDKey;
+static const void *kSCISeenButtonBarItemKey = &kSCISeenButtonBarItemKey;
+
+static NSString *SCIStringValueForObject(id obj) {
+    if (!obj || obj == [NSNull null]) return nil;
+
+    if ([obj isKindOfClass:[NSString class]]) {
+        NSString *value = (NSString *)obj;
+        return value.length ? value : nil;
+    }
+
+    if ([obj respondsToSelector:@selector(stringValue)]) {
+        NSString *value = [obj stringValue];
+        return value.length ? value : nil;
+    }
+
+    return nil;
+}
+
+static id SCIValueForKeySafely(id obj, NSString *key) {
+    if (!obj || !key.length) return nil;
+
+    @try {
+        return [obj valueForKey:key];
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+}
+
+static NSString *SCIExtractThreadIDFromContext(id context) {
+    if (!context) return nil;
+
+    NSArray<NSString *> *directKeys = @[
+        @"threadId", @"threadID", @"threadIdentifier", @"threadPk", @"threadPK",
+        @"directThreadID", @"directThreadId", @"conversationID", @"conversationId",
+        @"recipientID", @"recipientId", @"uniqueIdentifier", @"pk", @"id"
+    ];
+
+    for (NSString *key in directKeys) {
+        NSString *value = SCIStringValueForObject(SCIValueForKeySafely(context, key));
+        if (value.length) return value;
+    }
+
+    NSArray<NSString *> *nestedKeys = @[@"thread", @"threadModel", @"conversation", @"recipient", @"directThread", @"viewModel"];
+    for (NSString *nestedKey in nestedKeys) {
+        id nestedObj = SCIValueForKeySafely(context, nestedKey);
+        if (!nestedObj || nestedObj == context) continue;
+
+        for (NSString *key in directKeys) {
+            NSString *value = SCIStringValueForObject(SCIValueForKeySafely(nestedObj, key));
+            if (value.length) return value;
+        }
+    }
+
+    return nil;
+}
+
+static NSString *SCICurrentThreadIDFromNavBarView(IGTallNavigationBarView *view) {
+    NSString *threadID = SCIExtractThreadIDFromContext(view);
+    if (threadID.length) return threadID;
+
+    UIViewController *controller = [SCIUtils nearestViewControllerForView:view];
+    threadID = SCIExtractThreadIDFromContext(controller);
+    if (threadID.length) return threadID;
+
+    return SCIExtractThreadIDFromContext(topMostController());
+}
+
+static void SCIApplySeenButtonAppearance(UIBarButtonItem *button, NSString *threadID) {
+    if (!button) return;
+
+    BOOL isWhitelisted = SCIIsThreadWhitelisted(threadID);
+    UIImage *icon = [UIImage systemImageNamed:(isWhitelisted ? @"checkmark.message.fill" : @"checkmark.message")];
+    if (icon) {
+        [button setImage:icon];
+    }
+
+    if (isWhitelisted) {
+        [button setTintColor:[UIColor systemGreenColor]];
+    } else {
+        [button setTintColor:UIColor.labelColor];
+    }
+
+    objc_setAssociatedObject(button, kSCISeenButtonThreadIDKey, threadID ?: @"", OBJC_ASSOCIATION_COPY_NONATOMIC);
+}
 
 // Seen buttons (in DMs)
 // - Enables no seen for messages
@@ -20,7 +107,23 @@
     // Messages seen
     if ([SCIUtils getBoolPref:@"remove_lastseen"]) {
         UIBarButtonItem *seenButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"checkmark.message"] style:UIBarButtonItemStylePlain target:self action:@selector(seenButtonHandler:)];
+        NSString *threadID = SCICurrentThreadIDFromNavBarView(self);
+        SCIApplySeenButtonAppearance(seenButton, threadID);
         [new_items addObject:seenButton];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIView *buttonView = [seenButton valueForKey:@"view"];
+            if (!buttonView) return;
+
+            objc_setAssociatedObject(buttonView, kSCISeenButtonThreadIDKey, threadID ?: @"", OBJC_ASSOCIATION_COPY_NONATOMIC);
+            objc_setAssociatedObject(buttonView, kSCISeenButtonBarItemKey, seenButton, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+            if (![SCIUtils existingLongPressGestureRecognizerForView:buttonView]) {
+                UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(seenButtonLongPressHandler:)];
+                longPress.minimumPressDuration = 0.5;
+                [buttonView addGestureRecognizer:longPress];
+            }
+        });
     }
 
     // DM visual messages viewed
@@ -40,11 +143,43 @@
 
 // Messages seen button
 %new - (void)seenButtonHandler:(UIBarButtonItem *)sender {
+    NSString *threadID = objc_getAssociatedObject(sender, kSCISeenButtonThreadIDKey);
+    if (!threadID.length) {
+        threadID = SCICurrentThreadIDFromNavBarView(self);
+    }
+
+    SCIApplySeenButtonAppearance(sender, threadID);
+
     UIViewController *nearestVC = [SCIUtils nearestViewControllerForView:self];
     if ([nearestVC isKindOfClass:%c(IGDirectThreadViewController)]) {
         [(IGDirectThreadViewController *)nearestVC markLastMessageAsSeen];
 
         [SCIUtils showToastForDuration:2.5 title:@"Marked messages as seen"];
+    }
+}
+%new - (void)seenButtonLongPressHandler:(UILongPressGestureRecognizer *)sender {
+    if (sender.state != UIGestureRecognizerStateBegan) return;
+
+    UIView *buttonView = sender.view;
+    NSString *threadID = objc_getAssociatedObject(buttonView, kSCISeenButtonThreadIDKey);
+    UIBarButtonItem *barItem = objc_getAssociatedObject(buttonView, kSCISeenButtonBarItemKey);
+
+    if (!threadID.length) {
+        threadID = SCICurrentThreadIDFromNavBarView(self);
+    }
+
+    if (!threadID.length) {
+        [SCIUtils showToastForDuration:2.5 title:@"Could not resolve thread" subtitle:@"Try reopening this conversation"];
+        return;
+    }
+
+    BOOL nowWhitelisted = SCIToggleThreadWhitelist(threadID);
+    SCIApplySeenButtonAppearance(barItem, threadID);
+
+    if (nowWhitelisted) {
+        [SCIUtils showToastForDuration:2.5 title:@"Added to whitelist" subtitle:@"Messages in this thread will auto-mark as read"];
+    } else {
+        [SCIUtils showToastForDuration:2.5 title:@"Removed from whitelist" subtitle:@"Messages in this thread now require manual marking"];
     }
 }
 // DM visual messages viewed button
@@ -68,6 +203,11 @@
 %hook IGDirectThreadViewListAdapterDataSource
 - (BOOL)shouldUpdateLastSeenMessage {
     if ([SCIUtils getBoolPref:@"remove_lastseen"]) {
+        NSString *threadID = SCIExtractThreadIDFromContext(self);
+        if (SCIIsThreadWhitelisted(threadID)) {
+            return %orig;
+        }
+
         return false;
     }
     
