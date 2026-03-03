@@ -346,6 +346,24 @@
 // Reels/Sundial
 
 // Suggested AI searches in comment section
+%hook IGCommentConfig
+- (id)initWithUserSession:(id)session
+   commentThreadConfiguration:(IGCommentThreadConfiguration *)threadConfig
+sponsoredSupportConfiguration:(id)supportConfig
+          CTAPresenterContext:(id)context
+                    replyText:(id)text
+              loggingDelegate:(id)loggingDelegate
+     presentingViewController:(id)vc
+   childCommentThreadDelegate:(id)threadDelegate 
+{
+    if ([SCIUtils getBoolPref:@"hide_meta_ai"]) {
+        [threadConfig setValue:@(YES) forKey:@"disableMetaAICarousel"];
+    }
+    return %orig(session, threadConfig, supportConfig, context, text, loggingDelegate, vc, threadDelegate);
+}
+%end
+
+// Suggested AI searches in comment section (workaround if setting comment thread config fails)
 %hook IGCommentThreadAICarousel
 - (id)initWithLauncherSet:(id)arg1 hasSearchPrefix:(BOOL)arg2 {
     if ([SCIUtils getBoolPref:@"hide_meta_ai"]) {

@@ -486,6 +486,9 @@
 @property (readonly, nonatomic) IGCreationActionBarButton *button;
 @end
 
+@interface IGCommentThreadConfiguration : NSObject
+@end
+
 
 
 /////////////////////////////////////////////////////////////////////////////
