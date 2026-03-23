@@ -2,7 +2,6 @@
 #import "InstagramHeaders.h"
 #import "Tweak.h"
 #import "Utils.h"
-#import "Settings/SCISettingsViewController.h"
 
 ///////////////////////////////////////////////////////////
 
@@ -14,7 +13,7 @@
 ///////////////////////////////////////////////////////////
 
 // * Tweak version *
-NSString *SCIVersionString = @"v1.0.1-beta";
+NSString *SCIVersionString = @"v1.2.0-dev";
 
 // Variables that work across features
 BOOL dmVisualMsgsViewedButtonEnabled = false;
@@ -68,10 +67,62 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
     SCISaveThreadWhitelist();
     return nowWhitelisted;
 }
+NSMutableSet<NSString *> *dmReadWhitelistThreadIDs = nil;
 
-// Tweak first-time setup
+static NSString * const kSCIDMReadWhitelistKey = @"sci_dm_read_whitelist_thread_ids";
+
+static void SCISaveThreadWhitelist(void) {
+    if (!dmReadWhitelistThreadIDs) {
+        dmReadWhitelistThreadIDs = [NSMutableSet set];
+    }
+
+    [[NSUserDefaults standardUserDefaults] setObject:[dmReadWhitelistThreadIDs allObjects] forKey:kSCIDMReadWhitelistKey];
+}
+
+void SCILoadThreadWhitelist(void) {
+    NSArray *savedThreadIDs = [[NSUserDefaults standardUserDefaults] arrayForKey:kSCIDMReadWhitelistKey];
+
+    if ([savedThreadIDs isKindOfClass:[NSArray class]]) {
+        dmReadWhitelistThreadIDs = [NSMutableSet setWithArray:savedThreadIDs];
+    } else {
+        dmReadWhitelistThreadIDs = [NSMutableSet set];
+    }
+}
+
+BOOL SCIIsThreadWhitelisted(NSString *threadID) {
+    if (![threadID isKindOfClass:[NSString class]] || !threadID.length) return NO;
+
+    if (!dmReadWhitelistThreadIDs) {
+        SCILoadThreadWhitelist();
+    }
+
+    return [dmReadWhitelistThreadIDs containsObject:threadID];
+}
+
+BOOL SCIToggleThreadWhitelist(NSString *threadID) {
+    if (![threadID isKindOfClass:[NSString class]] || !threadID.length) return NO;
+
+    if (!dmReadWhitelistThreadIDs) {
+        SCILoadThreadWhitelist();
+    }
+
+    BOOL nowWhitelisted = NO;
+    if ([dmReadWhitelistThreadIDs containsObject:threadID]) {
+        [dmReadWhitelistThreadIDs removeObject:threadID];
+    } else {
+        [dmReadWhitelistThreadIDs addObject:threadID];
+        nowWhitelisted = YES;
+    }
+
+    SCISaveThreadWhitelist();
+    return nowWhitelisted;
+}
+
+// MARK: Tweak first-time setup
 %hook IGInstagramAppDelegate
 - (_Bool)application:(UIApplication *)application willFinishLaunchingWithOptions:(id)arg2 {
+    SCILoadThreadWhitelist();
+
     SCILoadThreadWhitelist();
 
     // Default SCInsta config
@@ -93,7 +144,8 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
         @"swipe_nav_tabs": @"default",
         @"enable_notes_customization": @(YES),
         @"custom_note_themes": @(YES),
-        @"disable_auto_unmuting_reels": @(YES)
+        @"disable_auto_unmuting_reels": @(YES),
+        @"doom_scrolling_reel_count": @(1)
     };
     [[NSUserDefaults standardUserDefaults] registerDefaults:sciDefaults];
     
@@ -122,11 +174,7 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
 
             // Display settings modal on screen
             NSLog(@"[SCInsta] Displaying SCInsta first-time settings modal");
-            UIViewController *rootController = [[self window] rootViewController];
-            SCISettingsViewController *settingsViewController = [SCISettingsViewController new];
-            UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:settingsViewController];
-
-            [rootController presentViewController:navigationController animated:YES completion:nil];
+            [SCIUtils showSettingsVC:[self window]];
         }
     });
 
@@ -149,6 +197,8 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
 }
 %end
 
+// MARK: Liquid glass
+
 %hook IGDSLauncherConfig
 - (_Bool)isLiquidGlassInAppNotificationEnabled {
     return [SCIUtils liquidGlassEnabledBool:%orig];
@@ -166,6 +216,8 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
     return [SCIUtils liquidGlassEnabledBool:%orig];
 }
 %end
+
+// MARK: Bug reports
 
 // Disable sending modded insta bug reports
 %hook IGWindow
@@ -185,6 +237,8 @@ shouldPersistLastBugReportId:(id)arg6
     return nil;
 }
 %end
+
+// MARK: Screenshots
 
 // Disable anti-screenshot feature on visual messages
 %hook IGStoryViewerContainerView
@@ -246,9 +300,40 @@ shouldPersistLastBugReportId:(id)arg6
 
 /////////////////////////////////////////////////////////////////////////////
 
-// Hide items
+// MARK: Hide items
 
 // Direct suggested chats (in search bar)
+BOOL showSearchSectionLabelForTag(NSInteger tag) {
+    if (
+        (tag == 18 && [SCIUtils getBoolPref:@"hide_meta_ai"]) // AI
+        || (tag == 20 && [SCIUtils getBoolPref:@"hide_meta_ai"]) // Ask Meta AI
+        || (tag == 2 && [SCIUtils getBoolPref:@"no_suggested_users"]) // More suggestions
+        || (tag == 13 && [SCIUtils getBoolPref:@"no_suggested_chats"]) // Suggested channels
+    ) {
+        return false;
+    }
+
+    return true;
+}
+
+%hook IGDirectInboxSearchSectionPartitioningComponent
+- (id)initWithSectionTitle:(id)arg1
+             maxRecipients:(NSInteger)maxRecipients
+               filterBlock:(id)arg3
+                comparator:(id)arg4
+          expandedSections:(id)arg5
+                      type:(NSInteger)arg6
+  recipientListSectionType:(NSInteger)tag
+{
+    if (showSearchSectionLabelForTag(tag)) {
+        return %orig(arg1, maxRecipients, arg3, arg4, arg5, arg6, tag);
+    }
+    else {
+        return %orig(arg1, 0, arg3, arg4, arg5, arg6, tag);
+    }
+}
+%end
+
 %hook IGDirectInboxSearchListAdapterDataSource
 - (id)objectsForListAdapter:(id)arg1 {
     NSArray *originalObjs = %orig();
@@ -257,34 +342,12 @@ shouldPersistLastBugReportId:(id)arg6
     for (id obj in originalObjs) {
         BOOL shouldHide = NO;
 
-        // Section header 
+        // Section headers
         if ([obj isKindOfClass:%c(IGLabelItemViewModel)]) {
 
-            // Broadcast channels
-            if ([[obj valueForKey:@"uniqueIdentifier"] isEqualToString:@"channels"]) {
-                if ([SCIUtils getBoolPref:@"no_suggested_chats"]) {
-                    NSLog(@"[SCInsta] Hiding suggested chats (header)");
-
-                    shouldHide = YES;
-                }
-            }
-
-            // Ask Meta AI
-            else if ([[obj valueForKey:@"labelTitle"] isEqualToString:@"Ask Meta AI"]) {
-                if ([SCIUtils getBoolPref:@"hide_meta_ai"]) {
-                    NSLog(@"[SCInsta] Hiding meta ai suggested chats (header)");
-
-                    shouldHide = YES;
-                }
-            }
-
-            // AI
-            else if ([[obj valueForKey:@"labelTitle"] isEqualToString:@"AI"]) {
-                if ([SCIUtils getBoolPref:@"hide_meta_ai"]) {
-                    NSLog(@"[SCInsta] Hiding ai suggested chats (header)");
-
-                    shouldHide = YES;
-                }
+            NSNumber *tag = [obj valueForKey:@"tag"];
+            if (tag && !showSearchSectionLabelForTag([tag intValue])) {
+                shouldHide = YES;
             }
             
         }
@@ -415,7 +478,7 @@ shouldPersistLastBugReportId:(id)arg6
             
             // "Suggestions" header
             if ([[obj title] isEqualToString:@"Suggestions"]) {
-                if ([SCIUtils getBoolPref:@"hide_meta_ai"]) {
+                if ([SCIUtils getBoolPref:@"no_suggested_users"]) {
                     NSLog(@"[SCInsta] Hiding suggested chats (header: messages tab)");
 
                     shouldHide = YES;
@@ -435,7 +498,7 @@ shouldPersistLastBugReportId:(id)arg6
 
         // Suggested recipients
         else if ([obj isKindOfClass:%c(IGDirectInboxSuggestedThreadCellViewModel)]) {
-            if ([SCIUtils getBoolPref:@"hide_meta_ai"]) {
+            if ([SCIUtils getBoolPref:@"no_suggested_users"]) {
                 NSLog(@"[SCInsta] Hiding suggested chats (recipients: channels tab)");
 
                 shouldHide = YES;
@@ -446,6 +509,15 @@ shouldPersistLastBugReportId:(id)arg6
         else if ([obj isKindOfClass:%c(IGDiscoverPeopleItemConfiguration)] || [obj isKindOfClass:%c(IGDiscoverPeopleConnectionItemConfiguration)]) {
             if ([SCIUtils getBoolPref:@"no_suggested_users"]) {
                 NSLog(@"[SCInsta] Hiding suggested chats: (recipients: inbox view)");
+
+                shouldHide = YES;
+            }
+        }
+
+        // Hide notes tray
+        else if ([obj isKindOfClass:%c(IGDirectNotesTrayRowViewModel)]) {
+            if ([SCIUtils getBoolPref:@"hide_notes_tray"]) {
+                NSLog(@"[SCInsta] Hiding notes tray");
 
                 shouldHide = YES;
             }
@@ -638,17 +710,7 @@ shouldPersistLastBugReportId:(id)arg6
 
 /////////////////////////////////////////////////////////////////////////////
 
-// Confirm buttons
-
-/*
-* Long press alerts can be triggered continuously by holding down on the button
-*
-* Instead, you call the "_didTap" method from the "_didLongPress" method
-* Then, in the "_didTap" method, you make sure the confirm alert is only shown once
-*/
-
-static BOOL showingFeedItemUFIConfirm = NO;
-static BOOL showingVerticalUFIConfirm = NO;
+// MARK: Confirm buttons
 
 %hook IGFeedItemUFICell
 - (void)UFIButtonBarDidTapOnLike:(id)arg1 {
@@ -663,15 +725,10 @@ static BOOL showingVerticalUFIConfirm = NO;
 }
 
 - (void)UFIButtonBarDidTapOnRepost:(id)arg1 {
-    if (showingFeedItemUFIConfirm) return;
-
     if ([SCIUtils getBoolPref:@"repost_confirm"]) {
         NSLog(@"[SCInsta] Confirm repost triggered");
 
-        showingFeedItemUFIConfirm = YES;
-
-        [SCIUtils showConfirmation:^(void) { %orig; showingFeedItemUFIConfirm = NO; }
-                     cancelHandler:^(void) { showingFeedItemUFIConfirm = NO; }];
+        [SCIUtils showConfirmation:^(void) { %orig; }];
     }
     else {
         return %orig;
@@ -680,9 +737,7 @@ static BOOL showingVerticalUFIConfirm = NO;
 
 - (void)UFIButtonBarDidLongPressOnRepost:(id)arg1 {
     if ([SCIUtils getBoolPref:@"repost_confirm"]) {
-        NSLog(@"[SCInsta] Confirm repost triggered (long press hack)");
-
-        [self UFIButtonBarDidTapOnRepost:nil];
+        NSLog(@"[SCInsta] Confirm repost triggered (long press ignored)");
     }
     else {
         return %orig;
@@ -690,9 +745,7 @@ static BOOL showingVerticalUFIConfirm = NO;
 }
 - (void)UFIButtonBarDidLongPressOnRepost:(id)arg1 withGestureRecognizer:(id)arg2 {
     if ([SCIUtils getBoolPref:@"repost_confirm"]) {
-        NSLog(@"[SCInsta] Confirm repost triggered (long press hack)");
-
-        [self UFIButtonBarDidTapOnRepost:nil];
+        NSLog(@"[SCInsta] Confirm repost triggered (long press ignored)");
     }
     else {
         return %orig;
@@ -702,15 +755,10 @@ static BOOL showingVerticalUFIConfirm = NO;
 
 %hook IGSundialViewerVerticalUFI
 - (void)_didTapLikeButton:(id)arg1 {
-    if (showingVerticalUFIConfirm) return;
-
     if ([SCIUtils getBoolPref:@"like_confirm_reels"]) {
         NSLog(@"[SCInsta] Confirm reels like triggered");
 
-        showingVerticalUFIConfirm = YES;
-
-        [SCIUtils showConfirmation:^(void) { %orig; showingVerticalUFIConfirm = NO; }
-                     cancelHandler:^(void) { showingVerticalUFIConfirm = NO; }];
+        [SCIUtils showConfirmation:^(void) { %orig; }];
     }
     else {
         return %orig;
@@ -719,9 +767,7 @@ static BOOL showingVerticalUFIConfirm = NO;
 
 - (void)_didLongPressLikeButton:(id)arg1 {
     if ([SCIUtils getBoolPref:@"like_confirm_reels"]) {
-        NSLog(@"[SCInsta] Confirm reels like triggered (long press hack)");
-
-        [self _didTapLikeButton:nil];
+        NSLog(@"[SCInsta] Confirm repost triggered (long press ignored)");
     }
     else {
         return %orig;
@@ -729,15 +775,10 @@ static BOOL showingVerticalUFIConfirm = NO;
 }
 
 - (void)_didTapRepostButton:(id)arg1 {
-    if (showingVerticalUFIConfirm) return;
-
     if ([SCIUtils getBoolPref:@"repost_confirm"]) {
         NSLog(@"[SCInsta] Confirm repost triggered");
 
-        showingVerticalUFIConfirm = YES;
-
-        [SCIUtils showConfirmation:^(void) { %orig; showingVerticalUFIConfirm = NO; }
-                     cancelHandler:^(void) { showingVerticalUFIConfirm = NO; }];
+        [SCIUtils showConfirmation:^(void) { %orig; }];
     }
     else {
         return %orig;
@@ -746,9 +787,7 @@ static BOOL showingVerticalUFIConfirm = NO;
 
 - (void)_didLongPressRepostButton:(id)arg1 {
     if ([SCIUtils getBoolPref:@"repost_confirm"]) {
-        NSLog(@"[SCInsta] Confirm repost triggered (long press hack)");
-
-        [self _didTapRepostButton:nil];
+        NSLog(@"[SCInsta] Confirm repost triggered (long press ignored)");
     }
     else {
         return %orig;

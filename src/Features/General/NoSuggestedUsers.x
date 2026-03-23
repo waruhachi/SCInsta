@@ -64,7 +64,7 @@
         // Section header 
         if ([obj isKindOfClass:%c(IGLabelItemViewModel)]) {
             // Suggested for you
-            if ([[obj labelTitle] isEqualToString:@"Suggested for you"]) {
+            if ([[obj valueForKey:@"tag"] intValue] == 2) { // 2 == Suggested Users
                 if ([SCIUtils getBoolPref:@"no_suggested_users"]) {
                     NSLog(@"[SCInsta] Hiding suggested users (header: activity feed)");
 
@@ -223,5 +223,41 @@
     }
 
     return [filteredObjs copy];
+}
+%end
+
+%hook IGProfileActionBarViewModel
+- (id)initWithIdentifier:(id)arg1
+                    rows:(id)arg2
+     allActionsToDisplay:(id)arg3
+         overflowActions:(id)arg4
+    actionToBadgeInfoMap:(id)arg5
+      allBusinessActions:(id)arg6
+ overflowBusinessActions:(id)arg7
+     contactSheetActions:(id)arg8
+                    user:(id)arg9
+   sponsoredInfoProvider:(id)arg10
+  profileBackgroundColor:(id)arg11
+{
+    NSArray *rows = arg2;
+    NSOrderedSet *allActions = [arg3 copy];
+    NSOrderedSet *overflowActions = [arg4 copy];
+
+    if ([SCIUtils getBoolPref:@"no_suggested_users"]) {
+        NSPredicate *predicate = [NSPredicate predicateWithFormat:@"NOT (SELF IN %@)", @[ @(3) ]];
+        
+        // Actions sets
+        allActions = [allActions filteredOrderedSetUsingPredicate:predicate];
+        overflowActions = [overflowActions filteredOrderedSetUsingPredicate:predicate];
+
+        // Rows of actions sets
+        NSMutableArray *filteredRows = [NSMutableArray new];
+        for (NSOrderedSet *set in rows) {
+            [filteredRows addObject:[set filteredOrderedSetUsingPredicate:predicate]];
+        }
+        rows = [filteredRows copy];
+    }
+
+    return %orig(arg1, rows, allActions, overflowActions, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
 }
 %end

@@ -30,6 +30,13 @@
 
 %hook IGSundialFeedViewController
 - (void)_refreshReelsWithParamsForNetworkRequest:(NSInteger)arg1 userDidPullToRefresh:(BOOL)arg2 {
+    if ([SCIUtils getBoolPref:@"prevent_doom_scrolling"]) {
+        IGRefreshControl *_refreshControl = MSHookIvar<IGRefreshControl *>(self, "_refreshControl");
+        [self refreshControlDidEndFinishLoadingAnimation:_refreshControl];
+
+        return;
+    }
+
     if ([SCIUtils getBoolPref:@"refresh_reel_confirm"]) {
         NSLog(@"[SCInsta] Reel refresh triggered");
         

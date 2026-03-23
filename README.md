@@ -1,6 +1,6 @@
 # SCInsta
 A feature-rich tweak for Instagram on iOS!\
-`Version v1.0.0` | `Tested on Instagram 414.0.0`
+`Version v1.2.0-dev` | `Tested on Instagram 418.2.0`
 
 ---
 
@@ -29,16 +29,18 @@ A feature-rich tweak for Instagram on iOS!\
 - Use detailed (native) color picker
 - Enable liquid glass buttons
 - Enable teen app icons
+- Disable app haptics
 - IG Notes:
   - Hide notes tray
   - Hide friends map
   - Enable note theming
   - Custom note themes
 - Focus/Distractions
-  - Hide explore posts grid
-  - Hide trending searches
-  - No suggested chats
   - No suggested users
+  - No suggested chats
+  - Hide trending searches
+  - Hide explore posts grid
+  - Hide metrics
 
 ### Feed
 - Hide stories tray
@@ -47,13 +49,17 @@ A feature-rich tweak for Instagram on iOS!\
 - No suggested for you (accounts)
 - No suggested reels
 - No suggested threads posts
+- Disable video autoplay
 
 ### Reels
 - Modify tap controls
 - Always show progress scrubber
+- Disable auto-unmuting reels
 - Confirm reel refresh
 - Hide reels header
+- Hide reels blend button
 - Disable scrolling reels
+- Prevent doom scrolling (limit maximum viewable reels)
 
 ### Saving
 - Download feed posts
@@ -79,6 +85,7 @@ A feature-rich tweak for Instagram on iOS!\
 - Hiding tabs
   - Hide feed tab
   - Hide explore tab
+  - Hide messages tab
   - Hide reels tab
   - Hide create tab
 

@@ -182,6 +182,22 @@
     return setting;
 }
 
++ (instancetype)navigationCellWithTitle:(NSString *)title
+                               subtitle:(NSString *)subtitle
+                                   icon:(nullable SCISymbol *)icon
+                         viewController:(UIViewController *)viewController
+{
+    SCISetting *setting = [[self alloc] initWithType:SCITableCellNavigation];
+    
+    setting.title = title;
+    setting.subtitle = subtitle;
+    
+    setting.icon = icon;
+    setting.navViewController = viewController;
+    
+    return setting;
+}
+
 
 // MARK: -  Instance methods
 

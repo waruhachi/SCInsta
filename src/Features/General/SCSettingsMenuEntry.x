@@ -26,10 +26,33 @@
     
     NSLog(@"[SCInsta] Tweak settings gesture activated");
 
-    UIViewController *rootController = [[self window] rootViewController];
-    SCISettingsViewController *settingsViewController = [SCISettingsViewController new];
-    UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:settingsViewController];
+    [SCIUtils showSettingsVC:[self window]];
+}
+%end
+
+// Quick access to tweak settings by holding on home tab button
+%hook IGTabBarButton
+- (void)didMoveToSuperview {
+    %orig;
+
+    // Only work on home/feed tab
+    if (![self.accessibilityIdentifier isEqualToString:@"mainfeed-tab"]) return;
     
-    [rootController presentViewController:navigationController animated:YES completion:nil];
+    if ([SCIUtils getBoolPref:@"settings_shortcut"]) {
+        UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
+        longPress.minimumPressDuration = 0.3;
+        
+        // Take precidence over existing gesture recognizers
+        for (UIGestureRecognizer *existing in self.gestureRecognizers) {
+            [existing requireGestureRecognizerToFail:longPress];
+        }
+        
+        [self addGestureRecognizer:longPress];
+    }
+}
+%new - (void)handleLongPress:(UILongPressGestureRecognizer *)sender {
+    if (sender.state != UIGestureRecognizerStateBegan) return;
+
+    [SCIUtils showSettingsVC:[self window]];
 }
 %end

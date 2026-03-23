@@ -22,3 +22,15 @@
     return %orig;
 }
 %end
+
+// Disable auto-scrolling reels
+%hook _TtC19IGSundialAutoScroll19IGSundialAutoScroll
+- (void)setIsEnabled:(BOOL)enabled {
+    if ([SCIUtils getBoolPref:@"disable_scrolling_reels"]) {
+        %orig(NO);
+    }
+    else {
+        %orig(enabled);
+    }
+}
+%end

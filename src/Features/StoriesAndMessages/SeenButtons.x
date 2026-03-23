@@ -154,7 +154,32 @@ static void SCIApplySeenButtonAppearance(UIBarButtonItem *button, NSString *thre
     if ([nearestVC isKindOfClass:%c(IGDirectThreadViewController)]) {
         [(IGDirectThreadViewController *)nearestVC markLastMessageAsSeen];
 
-        [SCIUtils showToastForDuration:2.5 title:@"Marked messages as seen" subtitle:nil];
+        [SCIUtils showToastForDuration:2.5 title:@"Marked messages as seen"];
+    }
+}
+%new - (void)seenButtonLongPressHandler:(UILongPressGestureRecognizer *)sender {
+    if (sender.state != UIGestureRecognizerStateBegan) return;
+
+    UIView *buttonView = sender.view;
+    NSString *threadID = objc_getAssociatedObject(buttonView, kSCISeenButtonThreadIDKey);
+    UIBarButtonItem *barItem = objc_getAssociatedObject(buttonView, kSCISeenButtonBarItemKey);
+
+    if (!threadID.length) {
+        threadID = SCICurrentThreadIDFromNavBarView(self);
+    }
+
+    if (!threadID.length) {
+        [SCIUtils showToastForDuration:2.5 title:@"Could not resolve thread" subtitle:@"Try reopening this conversation"];
+        return;
+    }
+
+    BOOL nowWhitelisted = SCIToggleThreadWhitelist(threadID);
+    SCIApplySeenButtonAppearance(barItem, threadID);
+
+    if (nowWhitelisted) {
+        [SCIUtils showToastForDuration:2.5 title:@"Added to whitelist" subtitle:@"Messages in this thread will auto-mark as read"];
+    } else {
+        [SCIUtils showToastForDuration:2.5 title:@"Removed from whitelist" subtitle:@"Messages in this thread now require manual marking"];
     }
 }
 %new - (void)seenButtonLongPressHandler:(UILongPressGestureRecognizer *)sender {
@@ -188,13 +213,13 @@ static void SCIApplySeenButtonAppearance(UIBarButtonItem *button, NSString *thre
         dmVisualMsgsViewedButtonEnabled = false;
         [sender setTintColor:UIColor.labelColor];
 
-        [SCIUtils showToastForDuration:4.5 title:@"Visual messages can be replayed without expiring" subtitle:nil];
+        [SCIUtils showToastForDuration:4.5 title:@"Visual messages can be replayed without expiring"];
     }
     else {
         dmVisualMsgsViewedButtonEnabled = true;
         [sender setTintColor:SCIUtils.SCIColor_Primary];
 
-        [SCIUtils showToastForDuration:4.5 title:@"Visual messages will now expire after viewing" subtitle:nil];
+        [SCIUtils showToastForDuration:4.5 title:@"Visual messages will now expire after viewing"];
     }
 }
 %end

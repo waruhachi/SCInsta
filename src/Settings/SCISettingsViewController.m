@@ -31,6 +31,12 @@ static char rowStaticRef[] = "row";
                     [mutableSections removeObjectAtIndex:index];
                 }
             }
+
+            else if ([section[@"header"] isEqualToString:@"Experimental"]) {
+                if (![[SCIUtils IGVersionString] hasSuffix:@"-dev"]) {
+                    [mutableSections removeObjectAtIndex:index];
+                }
+            }
             
         }];
         
@@ -237,6 +243,9 @@ static char rowStaticRef[] = "row";
             UIViewController *vc = [[SCISettingsViewController alloc] initWithTitle:row.title sections:row.navSections reduceMargin:NO];
             vc.title = row.title;
             [self.navigationController pushViewController:vc animated:YES];
+        }
+        else if (row.navViewController) {
+            [self.navigationController pushViewController:row.navViewController animated:YES];
         }
     }
 
