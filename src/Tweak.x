@@ -1,4 +1,5 @@
 #import <substrate.h>
+#import <objc/message.h>
 #import "InstagramHeaders.h"
 #import "Tweak.h"
 #import "Utils.h"
@@ -67,62 +68,27 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
     SCISaveThreadWhitelist();
     return nowWhitelisted;
 }
-NSMutableSet<NSString *> *dmReadWhitelistThreadIDs = nil;
 
-static NSString * const kSCIDMReadWhitelistKey = @"sci_dm_read_whitelist_thread_ids";
-
-static void SCISaveThreadWhitelist(void) {
-    if (!dmReadWhitelistThreadIDs) {
-        dmReadWhitelistThreadIDs = [NSMutableSet set];
-    }
-
-    [[NSUserDefaults standardUserDefaults] setObject:[dmReadWhitelistThreadIDs allObjects] forKey:kSCIDMReadWhitelistKey];
+BOOL SCIShouldMarkSeenOnSend(void) {
+    return [SCIUtils getBoolPref:@"mark_seen_on_send"];
 }
 
-void SCILoadThreadWhitelist(void) {
-    NSArray *savedThreadIDs = [[NSUserDefaults standardUserDefaults] arrayForKey:kSCIDMReadWhitelistKey];
+void SCIMarkThreadAsSeenIfNeeded(id viewController) {
+    if (!SCIShouldMarkSeenOnSend()) return;
 
-    if ([savedThreadIDs isKindOfClass:[NSArray class]]) {
-        dmReadWhitelistThreadIDs = [NSMutableSet setWithArray:savedThreadIDs];
-    } else {
-        dmReadWhitelistThreadIDs = [NSMutableSet set];
+    if (!viewController || ![viewController respondsToSelector:@selector(markLastMessageAsSeen)]) return;
+
+    @try {
+        ((void(*)(id, SEL))objc_msgSend)(viewController, @selector(markLastMessageAsSeen));
+    } @catch (NSException *exception) {
+        NSLog(@"[SCInsta] MarkSeenOnSend: markLastMessageAsSeen threw exception: %@", exception.reason);
+        return;
     }
-}
-
-BOOL SCIIsThreadWhitelisted(NSString *threadID) {
-    if (![threadID isKindOfClass:[NSString class]] || !threadID.length) return NO;
-
-    if (!dmReadWhitelistThreadIDs) {
-        SCILoadThreadWhitelist();
-    }
-
-    return [dmReadWhitelistThreadIDs containsObject:threadID];
-}
-
-BOOL SCIToggleThreadWhitelist(NSString *threadID) {
-    if (![threadID isKindOfClass:[NSString class]] || !threadID.length) return NO;
-
-    if (!dmReadWhitelistThreadIDs) {
-        SCILoadThreadWhitelist();
-    }
-
-    BOOL nowWhitelisted = NO;
-    if ([dmReadWhitelistThreadIDs containsObject:threadID]) {
-        [dmReadWhitelistThreadIDs removeObject:threadID];
-    } else {
-        [dmReadWhitelistThreadIDs addObject:threadID];
-        nowWhitelisted = YES;
-    }
-
-    SCISaveThreadWhitelist();
-    return nowWhitelisted;
 }
 
 // MARK: Tweak first-time setup
 %hook IGInstagramAppDelegate
 - (_Bool)application:(UIApplication *)application willFinishLaunchingWithOptions:(id)arg2 {
-    SCILoadThreadWhitelist();
-
     SCILoadThreadWhitelist();
 
     // Default SCInsta config
@@ -145,7 +111,8 @@ BOOL SCIToggleThreadWhitelist(NSString *threadID) {
         @"enable_notes_customization": @(YES),
         @"custom_note_themes": @(YES),
         @"disable_auto_unmuting_reels": @(YES),
-        @"doom_scrolling_reel_count": @(1)
+        @"doom_scrolling_reel_count": @(1),
+        @"mark_seen_on_send": @(NO)
     };
     [[NSUserDefaults standardUserDefaults] registerDefaults:sciDefaults];
     

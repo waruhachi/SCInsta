@@ -133,6 +133,7 @@
                                             @"rows": @[
                                                 [SCISetting switchCellWithTitle:@"Keep deleted messages" subtitle:@"Saves deleted messages in chat conversations" defaultsKey:@"keep_deleted_message"],
                                                 [SCISetting switchCellWithTitle:@"Manually mark messages as seen" subtitle:@"Adds a button to DM threads, which will mark messages as seen" defaultsKey:@"remove_lastseen"],
+                                                [SCISetting switchCellWithTitle:@"Mark thread as seen on message send" subtitle:@"Automatically marks a DM thread as seen when you send a message" defaultsKey:@"mark_seen_on_send"],
                                                 [SCISetting switchCellWithTitle:@"Disable typing status" subtitle:@"Prevents the typing indicator from being shown to others when you're typing in DMs" defaultsKey:@"disable_typing_status"],
                                             ]
                                         },
