@@ -150,11 +150,11 @@ static void SCIApplySeenButtonAppearance(UIBarButtonItem *button, NSString *thre
 
     SCIApplySeenButtonAppearance(sender, threadID);
 
-    UIViewController *nearestVC = [SCIUtils nearestViewControllerForView:self];
-    if ([nearestVC isKindOfClass:%c(IGDirectThreadViewController)]) {
-        [(IGDirectThreadViewController *)nearestVC markLastMessageAsSeen];
-
+    UIViewController *nearestVC = [SCIUtils nearestViewControllerForView:self] ?: topMostController();
+    if (SCIMarkThreadAsSeen(nearestVC)) {
         [SCIUtils showToastForDuration:2.5 title:@"Marked messages as seen"];
+    } else {
+        [SCIUtils showToastForDuration:2.5 title:@"Mark as read is not available"];
     }
 }
 %new - (void)seenButtonLongPressHandler:(UILongPressGestureRecognizer *)sender {

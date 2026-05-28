@@ -4,10 +4,6 @@
 
 static CFTimeInterval sciSeenOnSendLastScheduleAt = 0;
 
-static BOOL SCIObjectCanMarkSeen(id obj) {
-    return obj && [obj respondsToSelector:@selector(markLastMessageAsSeen)];
-}
-
 static id SCIValueForKeySafely(id obj, NSString *key) {
     if (!obj || !key.length) return nil;
 

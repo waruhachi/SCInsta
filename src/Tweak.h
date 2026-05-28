@@ -11,7 +11,9 @@ BOOL SCIIsThreadWhitelisted(NSString *threadID);
 BOOL SCIToggleThreadWhitelist(NSString *threadID);
 void SCILoadThreadWhitelist(void);
 BOOL SCIShouldMarkSeenOnSend(void);
-void SCIMarkThreadAsSeenIfNeeded(id viewController);
+BOOL SCIObjectCanMarkSeen(id obj);
+BOOL SCIMarkThreadAsSeen(id viewController);
+BOOL SCIMarkThreadAsSeenIfNeeded(id viewController);
 
 // Biometric/passcode authentication
 extern BOOL isAuthenticationBeingShown;

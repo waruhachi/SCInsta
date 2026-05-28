@@ -1,5 +1,6 @@
 #import <substrate.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 #import "InstagramHeaders.h"
 #import "Tweak.h"
 #import "Utils.h"
@@ -73,17 +74,97 @@ BOOL SCIShouldMarkSeenOnSend(void) {
     return [SCIUtils getBoolPref:@"mark_seen_on_send"];
 }
 
-void SCIMarkThreadAsSeenIfNeeded(id viewController) {
-    if (!SCIShouldMarkSeenOnSend()) return;
+static BOOL SCIObjectRespondsToZeroArgumentSelector(id obj, SEL selector) {
+    if (!obj || !selector || ![obj respondsToSelector:selector]) return NO;
 
-    if (!viewController || ![viewController respondsToSelector:@selector(markLastMessageAsSeen)]) return;
+    Method method = class_getInstanceMethod([obj class], selector);
+    if (!method) return NO;
+
+    return method_getNumberOfArguments(method) == 2;
+}
+
+static SEL SCIMarkSeenSelectorForObject(id obj) {
+    SEL selector = @selector(markLastMessageAsSeen);
+    if (SCIObjectRespondsToZeroArgumentSelector(obj, selector)) return selector;
+
+    return NULL;
+}
+
+static id SCIValueForKeySafely(id obj, NSString *key) {
+    if (!obj || !key.length) return nil;
 
     @try {
-        ((void(*)(id, SEL))objc_msgSend)(viewController, @selector(markLastMessageAsSeen));
-    } @catch (NSException *exception) {
-        NSLog(@"[SCInsta] MarkSeenOnSend: markLastMessageAsSeen threw exception: %@", exception.reason);
-        return;
+        return [obj valueForKey:key];
+    } @catch (__unused NSException *exception) {
+        return nil;
     }
+}
+
+static id SCIMarkSeenTargetForObject(id obj, NSMutableSet<NSValue *> *visited) {
+    if (!obj) return nil;
+
+    NSValue *identity = [NSValue valueWithNonretainedObject:obj];
+    if ([visited containsObject:identity]) return nil;
+    [visited addObject:identity];
+
+    if (SCIMarkSeenSelectorForObject(obj)) return obj;
+
+    NSArray<NSString *> *keys = @[
+        @"featureManager",
+        @"_featureManager",
+        @"messageListViewController",
+        @"_messageListViewController"
+    ];
+
+    for (NSString *key in keys) {
+        id value = SCIValueForKeySafely(obj, key);
+        id target = SCIMarkSeenTargetForObject(value, visited);
+        if (target) return target;
+    }
+
+    if ([obj isKindOfClass:[UIViewController class]]) {
+        UIViewController *controller = (UIViewController *)obj;
+        for (UIViewController *child in controller.childViewControllers) {
+            id target = SCIMarkSeenTargetForObject(child, visited);
+            if (target) return target;
+        }
+
+        id target = SCIMarkSeenTargetForObject(controller.presentedViewController, visited);
+        if (target) return target;
+    }
+
+    return nil;
+}
+
+BOOL SCIObjectCanMarkSeen(id obj) {
+    return SCIMarkSeenTargetForObject(obj, [NSMutableSet set]) != nil;
+}
+
+BOOL SCIMarkThreadAsSeen(id viewController) {
+    if (!viewController) {
+        NSLog(@"[SCInsta] MarkSeen: missing source controller");
+        return NO;
+    }
+
+    id target = SCIMarkSeenTargetForObject(viewController, [NSMutableSet set]);
+    SEL selector = SCIMarkSeenSelectorForObject(target);
+    if (!selector) {
+        NSLog(@"[SCInsta] MarkSeen: no markLastMessageAsSeen target from %@", NSStringFromClass([viewController class]));
+        return NO;
+    }
+
+    @try {
+        ((void(*)(id, SEL))objc_msgSend)(target, selector);
+        return YES;
+    } @catch (NSException *exception) {
+        NSLog(@"[SCInsta] MarkSeen: -[%@ markLastMessageAsSeen] threw exception: %@", NSStringFromClass([target class]), exception.reason);
+        return NO;
+    }
+}
+
+BOOL SCIMarkThreadAsSeenIfNeeded(id viewController) {
+    if (!SCIShouldMarkSeenOnSend()) return NO;
+    return SCIMarkThreadAsSeen(viewController);
 }
 
 // MARK: Tweak first-time setup
